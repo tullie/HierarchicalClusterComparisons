@@ -1,0 +1,29 @@
+plugins {
+  id 'application'
+  id "com.scuilion.syntastic" version "0.3.6-java7"
+}
+
+mainClassName = "CureDriver"
+
+run {
+  args += 'src/main/resources/spiral.txt'
+  args += '3'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+  compile files('libs/JBIRCH.jar')
+  compile project('libs:cure')
+  compile project('libs:rock')
+  testCompile 'junit:junit:4.12'
+}
+
+apply plugin: 'java'
+  compileJava {
+    options.compilerArgs << '-Xlint:unchecked'
+    options.fork = true
+    options.forkOptions.executable = 'javac'
+}
