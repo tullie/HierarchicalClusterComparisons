@@ -1,0 +1,22 @@
+plugins {
+  id 'java'
+}
+
+apply plugin: 'com.scuilion.syntastic'
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/cure'
+        }
+    }
+}
+
+dependencies {
+  compile files('libs/kd.jar')
+  testCompile 'junit:junit:4.12'
+}

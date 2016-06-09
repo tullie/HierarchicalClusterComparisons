@@ -1,1 +1,1 @@
-include 'libs:cure', 'libs:rock'
+include 'libs:cure', 'libs:rock', 'libs:chameleon'

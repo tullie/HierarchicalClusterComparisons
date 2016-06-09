@@ -30,7 +30,7 @@ class BirchDriver {
     birchTree.setMemoryLimitMB(MEMORY_LIMIT);
     birchTree.setPeriodicMemLimitCheck(MEMORY_LIMIT_PERIODIC_CHECK);
 
-    List<double[]> dataset = readDataset(args[0]);
+    List<double[]> dataset = Utils.readDataset(args[0]);
 
     for (int i = 0; i < dataset.size(); ++i) {
       boolean didInsert = birchTree.insertEntry(dataset.get(i));
@@ -49,21 +49,5 @@ class BirchDriver {
     System.out.println("Total CF-Nodes: " + birchTree.countNodes());
     System.out.println("Total CF-Entries: " + birchTree.countEntries());
     System.out.println("Total CF-Leaves: " + birchTree.countLeafEntries());
-  }
-
-  static List<double[]> readDataset(String datasetFile) throws IOException {
-    List<double[]> dataset = new ArrayList<>();
-    BufferedReader fileIn = new BufferedReader(new FileReader(datasetFile));
-    String line = null;
-    while ((line = fileIn.readLine()) != null) {
-      String[] lineSplit = line.replaceFirst("^\\s+", "").split("\\s+");
-      double[] values = new double[lineSplit.length];
-      for (int i = 0; i < values.length; ++i) {
-        values[i] = Double.parseDouble(lineSplit[i]);
-      }
-      dataset.add(values);
-    }
-    fileIn.close();
-    return dataset;
   }
 }

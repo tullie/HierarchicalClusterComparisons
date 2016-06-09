@@ -22,7 +22,7 @@ class CureDriver {
 
     System.out.println("Running CURE driver...");
 
-    List<double[]> dataset = readDataset(args[0]);
+    List<double[]> dataset = Utils.readDataset(args[0]);
     Cure cureClusterer = new Cure(dataset, Integer.parseInt(args[1]));
 
     cureClusterer.setShrinkFactor(SHRINK_FACTOR);
@@ -38,21 +38,5 @@ class CureDriver {
     ArrayList clusters = cureClusterer.cluster();
 
     // cureClusterer.showClusters(clusters);
-  }
-
-  static List<double[]> readDataset(String datasetFile) throws IOException {
-    List<double[]> dataset = new ArrayList<>();
-    BufferedReader fileIn = new BufferedReader(new FileReader(datasetFile));
-    String line = null;
-    while ((line = fileIn.readLine()) != null) {
-      String[] lineSplit = line.replaceFirst("^\\s+", "").split("\\s+");
-      double[] values = new double[lineSplit.length];
-      for (int i = 0; i < values.length; ++i) {
-        values[i] = Double.parseDouble(lineSplit[i]);
-      }
-      dataset.add(values);
-    }
-    fileIn.close();
-    return dataset;
   }
 }
