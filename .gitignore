@@ -1,2 +1,3 @@
 **/build
 .syntastic_javac_config
+.gradle
