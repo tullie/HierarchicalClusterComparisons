@@ -3,6 +3,10 @@ package chameleon;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Iterator;
+import java.util.ListIterator;
 import java.util.LinkedList;
 import java.util.PriorityQueue;
 import java.util.Comparator;
@@ -23,11 +27,13 @@ public class Chameleon {
     List<Node> graph = constructGraph(dataset, K_NEAREST_NEIGHBOURS);
     List<List<Node>> subClusters = bisectUntilSize(graph, MIN_PARTITION_SIZE);
 
+    int i = 1;
     for (List<Node> subCluster : subClusters) {
-      System.out.println();
+      System.out.println("Cluster " + i);
+      i++;
 
       for (Node node : subCluster) {
-        System.out.println(node.index + ", ");
+        System.out.print(node.index + ", ");
       }
     }
 
@@ -101,16 +107,38 @@ public class Chameleon {
 
     List<Node> largestCluster = graph;
     while (largestCluster.size() > MIN_PARTITION_SIZE) {
-      FiducciaMattheyses bisectAlgorithm = new FiducciaMattheyses(graph);
-      List<List<Node>> subClusters = bisectAlgorithm.bisect();
-      break;
-      /*
+      HMetisInterface hmetis = new HMetisInterface();
+      List<List<Node>> subClusters = hmetis.runMetisOnGraph(largestCluster, 2);
+      subClusters = correctIndexes(subClusters);
       for (List<Node> subCluster : subClusters) {
         clusterSizeHeap.add(subCluster);
       }
       largestCluster = clusterSizeHeap.poll();
-      */
+      System.out.println(largestCluster.size());
     }
     return new ArrayList<>(clusterSizeHeap);
+  }
+
+  private static List<List<Node>> correctIndexes(List<List<Node>> subClusters) {
+    for (List<Node> subCluster : subClusters) {
+      Map<Integer, Integer> oldIndexToNew = new HashMap<>();
+      for (int i = 0; i < subCluster.size(); ++i) {
+        oldIndexToNew.put(subCluster.get(i).index, i);
+        subCluster.get(i).index = i;
+      }
+
+      for (Node node : subCluster) {
+        ListIterator<Integer> neighborIt = node.neighbors.listIterator();
+        while (neighborIt.hasNext()) {
+          Integer neighbor = neighborIt.next();
+          if (oldIndexToNew.containsKey(neighbor)) {
+            neighborIt.set(oldIndexToNew.get(neighbor));
+          } else {
+            neighborIt.remove();
+          }
+        }
+      }
+    }
+    return subClusters;
   }
 }
