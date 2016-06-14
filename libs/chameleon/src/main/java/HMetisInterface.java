@@ -17,7 +17,7 @@ import java.lang.ProcessBuilder;
 import java.util.Enumeration;
 
 public class HMetisInterface {
-  static final double UFACTOR = 5.0;
+  static final double UFACTOR = 25.0; // Balance factor (%).
 
   static int current = 0;
 
