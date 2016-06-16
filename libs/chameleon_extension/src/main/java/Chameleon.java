@@ -21,6 +21,7 @@ public class Chameleon {
   static final int K_NEAREST_NEIGHBOURS = 3;
   static final double ALPHA = 1;
   static final double REQUIRED_REPRESENTATION_PROBABLITY = 0.1;
+  static final int MIN_REPRESENTATION_COUNT = 4;
 
   HMetisInterface hmetis = new HMetisInterface();
   Set<Integer> sampledIndexes = new HashSet<>();
@@ -209,6 +210,7 @@ public class Chameleon {
           emptyCluster = true;
           continue;
         }
+
         subCluster = rebuildNodeIndexes(subCluster);
         clusterSizeHeap.add(subCluster);
       }
@@ -220,6 +222,7 @@ public class Chameleon {
       largestCluster = clusterSizeHeap.poll();
     }
     clusterSizeHeap.add(largestCluster);
+
     return new ArrayList<>(clusterSizeHeap);
   }
 
@@ -280,8 +283,7 @@ public class Chameleon {
       mergedIndexes.add(rhsIndex);
       List<Node> lhsCluster = subClusters.get(lhsIndex);
       List<Node> rhsCluster = subClusters.get(rhsIndex);
-      lhsCluster.addAll(rhsCluster);
-      List<Node> mergedCluster = rebuildNodeIndexes(lhsCluster);
+      List<Node> mergedCluster = mergeClusters(lhsCluster, rhsCluster);
 
       for (int i = 0; i < subClusters.size(); ++i) {
         if (!mergedIndexes.contains(i)) {
@@ -304,6 +306,69 @@ public class Chameleon {
     }
 
     return resultClusters;
+  }
+
+  private List<List<Node>> mergeClusters(List<Node> lhsCluster,
+      List<Node> rhsCluster) {
+    List<Node> mergedCluster = lhsCluster;
+    mergedCluster.addAll(rhsCluster);
+    int mean = calculateClusterMean(megedCluster);
+    List<Node> reprNodes = new ArrayList();
+    for (int i = 0; i < MIN_REPRESENTATION_COUNT; ++i) {
+      double maxDist = 0;
+      double minDist = 0;
+      Node maxNode = null;
+      for (int j = 0; j < mergedCluster.size(); ++j) {
+        Node node = mergedClusters.get(j);
+        if (j == 0) {
+          minDist = euclideanDistance(node.values, mean);
+        } else {
+          minDist = calculateMinDistanceFromSet(node, reprNodes);
+        }
+        if (minDist >= maxDist) {
+          maxDist = minDist;
+          maxNode = node;
+        }
+      }
+      reprNodes.add(maxNode);
+    }
+
+    return reprNodes;
+  }
+
+  private double computeMinDistanceFromGroup(Node node, List<Node> set) {
+    double minDistance = Double.MIN_VALUE;
+    for (Node setNode : set) {
+      if (setNode.originalIndex == set.originalIndex) {
+        continue;
+      }
+
+      double distance = euclideanDistance(node, setNode);
+      if (minDistance > distance) {
+        minDistance = distance;
+      }
+    }
+
+    if (minDistance == 100000) {
+      return 0;
+    } else
+      return minDistance;
+  }
+
+  private double[] calculateClusterMean(List<Node> cluster) {
+    int dimension = cluster.get(0).values.size();
+    double[] mean = new double[dimension];
+    for (Node node : cluster) {
+      for (int i = 0; i < mean.size(); ++i) {
+        mean[i] += node.values[i];
+      }
+    }
+
+    for (int i = 0; i < mean.length; ++i) {
+      mean[i] /= cluster.size();
+    }
+
+    return mean;
   }
 
   private double distance(List<Node> lhsCluster, List<Node> rhsCluster) {
