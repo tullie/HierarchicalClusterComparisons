@@ -52,8 +52,9 @@ public class HMetisInterface {
 
     try {
       Process p = Runtime.getRuntime().exec(sb.toString());
-      System.out.println(readStdout(p));
-      System.out.println(readStderr(p));
+      // System.out.println(readStdout(p));
+      // System.out.println(readStderr(p));
+      readStdout(p);
       p.waitFor();
     } catch (IOException | InterruptedException e) {
       e.printStackTrace();
@@ -137,8 +138,8 @@ public class HMetisInterface {
 
         // Append self.
         sb.append(i + 1);
-        for (int neighbor : graph.get(i).neighbors) {
-          sb.append(space).append(neighbor + 1);
+        for (Node.Edge edge : graph.get(i).neighbors) {
+          sb.append(space).append(edge.neighborIndex + 1);
         }
         sb.append("\n");
       }

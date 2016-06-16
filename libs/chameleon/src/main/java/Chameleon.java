@@ -21,10 +21,11 @@ public class Chameleon {
   static final int MIN_PARTITION_SIZE = 10; // 1 - 5% of dataset size.
   static final double ALPHA = 1;
 
-  public static void cluster(List<double[]> dataset, int clusterCount) {
+  public static List<List<Node>> cluster(List<double[]> dataset,
+                                         int clusterCount) {
     if (dataset.isEmpty() || clusterCount <= 0) {
       System.out.println("Chameleon cluster given invalid parameters");
-      return;
+      return null;
     }
 
     List<Node> graph = constructGraph(dataset, K_NEAREST_NEIGHBOURS);
@@ -32,25 +33,37 @@ public class Chameleon {
 
     int i = 1;
     for (List<Node> subCluster : subClusters) {
+      System.out.println();
       System.out.println("Cluster " + i);
       i++;
 
       for (Node node : subCluster) {
-        System.out.print(node.index + ", ");
+        System.out.print(node.originalIndex + "(");
+        for (Node.Edge edge : node.originalNeighbors) {
+          System.out.print(edge.neighborIndex + ",");
+        }
+        System.out.print("), ");
       }
     }
+
+    System.out.println();
+    System.out.println("========================================");
 
     List<List<Node>> clusters = mergeSubClusters(subClusters, clusterCount);
 
     int j = 1;
     for (List<Node> subCluster : clusters) {
+      System.out.println();
       System.out.println("Cluster " + j);
       j++;
 
       for (Node node : subCluster) {
-        System.out.print(node.index + ", ");
+        System.out.print(node.originalIndex + ", ");
       }
     }
+    System.out.println();
+
+    return clusters;
   }
 
   private static List<Node> constructGraph(List<double[]> dataset, int knn) {
@@ -77,10 +90,46 @@ public class Chameleon {
         System.out.println(msg);
         continue;
       }
-      graph.add(new Node(i, dataset.get(i), knnIndexes));
+      List<Node.Edge> neighbors = new ArrayList<>(knnIndexes.size());
+      for (int neighborIndex : knnIndexes) {
+        double dist =
+            euclideanDistance(dataset.get(i), dataset.get(neighborIndex));
+        neighbors.add(new Node.Edge(neighborIndex, dist));
+      }
+      graph.add(new Node(i, dataset.get(i), neighbors));
+    }
+
+    // Add directed edge back from neighbor nodes
+    for (Node node : graph) {
+      for (Node.Edge edge : node.neighbors) {
+        Node neighbor = graph.get(edge.neighborIndex);
+
+        // Only add if not already there.
+        boolean selfReferenceFound = false;
+        for (Node.Edge neighborEdge : neighbor.neighbors) {
+          if (neighborEdge.neighborIndex == node.index) {
+            selfReferenceFound = true;
+            break;
+          }
+        }
+
+        if (!selfReferenceFound) {
+          Node.Edge backEdge = new Node.Edge(node.index, edge.weight);
+          neighbor.originalNeighbors.add(backEdge);
+          neighbor.neighbors.add(backEdge);
+        }
+      }
     }
 
     return graph;
+  }
+
+  private static double euclideanDistance(double[] lhs, double[] rhs) {
+    double innerSum = 0;
+    for (int i = 0; i < lhs.length; ++i) {
+      innerSum += Math.pow(lhs[i] + rhs[i], 2);
+    }
+    return Math.sqrt(innerSum);
   }
 
   private static List<List<Node>> bisectUntilSize(List<Node> graph,
@@ -92,9 +141,9 @@ public class Chameleon {
             if (lhs.size() == rhs.size())
               return 0;
             if (lhs.size() > rhs.size())
-              return 1;
-            else
               return -1;
+            else
+              return 1;
           }
         });
 
@@ -121,9 +170,10 @@ public class Chameleon {
 
     for (Node node : cluster) {
       node.neighbors.clear();
-      for (Integer originalNeighbor : node.originalNeighbors) {
-        if (oldIndexToNew.containsKey(originalNeighbor)) {
-          node.neighbors.add(oldIndexToNew.get(originalNeighbor));
+      for (Node.Edge edge : node.originalNeighbors) {
+        if (oldIndexToNew.containsKey(edge.neighborIndex)) {
+          int newIndex = oldIndexToNew.get(edge.neighborIndex);
+          node.neighbors.add(new Node.Edge(newIndex, edge.weight));
         }
       }
     }
@@ -141,7 +191,6 @@ public class Chameleon {
           }
         });
 
-    Map<Integer, List<double[]>> pqValueByCluster = new HashMap<>();
     for (int i = 0; i < subClusters.size(); ++i) {
       for (int j = i + 1; j < subClusters.size(); ++j) {
         double[] distAndIndexes = new double[3];
@@ -149,47 +198,44 @@ public class Chameleon {
         distAndIndexes[1] = (double)i;
         distAndIndexes[2] = (double)j;
         clusterDistQueue.add(distAndIndexes);
-        addToListMap(pqValueByCluster, i, distAndIndexes);
-        addToListMap(pqValueByCluster, j, distAndIndexes);
       }
     }
 
     Set<Integer> mergedIndexes = new HashSet<>();
     int currentClusterCount = subClusters.size();
     while (currentClusterCount > clusterCount) {
-      currentClusterCount--;
       double[] distAndIndexes = clusterDistQueue.poll();
       int lhsIndex = (int)distAndIndexes[1];
       int rhsIndex = (int)distAndIndexes[2];
+      if (mergedIndexes.contains(lhsIndex) ||
+          mergedIndexes.contains(rhsIndex)) {
+        continue;
+      }
+
+      currentClusterCount--;
+      System.out.println("---------------------------------------------------");
+      System.out.println("-----------" + currentClusterCount + "------------");
+      System.out.println("---------------------------------------------------");
       mergedIndexes.add(lhsIndex);
       mergedIndexes.add(rhsIndex);
-
-      for (double[] pqValue : pqValueByCluster.get(lhsIndex)) {
-        pqValueByCluster.remove(pqValue);
-      }
-      for (double[] pqValue : pqValueByCluster.get(rhsIndex)) {
-        pqValueByCluster.remove(pqValue);
-      }
-
       List<Node> lhsCluster = subClusters.get(lhsIndex);
       List<Node> rhsCluster = subClusters.get(rhsIndex);
-
       List<Node> mergedCluster = mergeClusters(lhsCluster, rhsCluster);
 
       for (int i = 0; i < subClusters.size(); ++i) {
-        double[] mergedDistAndIndexes = new double[3];
-        mergedDistAndIndexes[0] = distance(mergedCluster, subClusters.get(i));
-        mergedDistAndIndexes[1] = (double)i;
-        mergedDistAndIndexes[2] = (double)subClusters.size();
-        clusterDistQueue.add(distAndIndexes);
-        addToListMap(pqValueByCluster, i, distAndIndexes);
-        addToListMap(pqValueByCluster, subClusters.size(), distAndIndexes);
+        if (!mergedIndexes.contains(i)) {
+          double[] mergedDistAndIndexes = new double[3];
+          mergedDistAndIndexes[0] = distance(mergedCluster, subClusters.get(i));
+          mergedDistAndIndexes[1] = (double)i;
+          mergedDistAndIndexes[2] = (double)subClusters.size();
+          clusterDistQueue.add(mergedDistAndIndexes);
+        }
       }
 
       subClusters.add(mergedCluster);
     }
 
-    List<List<Node>> resultClusters =  new ArrayList<>();
+    List<List<Node>> resultClusters = new ArrayList<>();
     for (int i = 0; i < subClusters.size(); ++i) {
       if (!mergedIndexes.contains(i)) {
         resultClusters.add(subClusters.get(i));
@@ -207,19 +253,46 @@ public class Chameleon {
 
   private static int relativeInterConnectivity(List<Node> lhsCluster,
                                                List<Node> rhsCluster) {
-    List<Node> mergedCluster = mergeClusters(lhsCluster, rhsCluster);
+    List<Node> mergedCluster = new ArrayList<>();
+    mergedCluster.addAll(lhsCluster);
+    mergedCluster.addAll(rhsCluster);
     int mergedEdgeCut = edgeCutWeight(mergedCluster);
     int lhsEdgeCut = edgeCutWeight(lhsCluster);
     int rhsEdgeCut = edgeCutWeight(rhsCluster);
+    System.out.println("MergedEdgeCut: " + mergedEdgeCut + " lhsEdgeCut: " +
+                       lhsEdgeCut + " rhsEdgeCut: " + rhsEdgeCut);
+    if (lhsEdgeCut == 0 || rhsEdgeCut == 0) {
+      return 0;
+    }
+
     return mergedEdgeCut / ((lhsEdgeCut + rhsEdgeCut) / 2);
   }
 
   private static int relativeCloseness(List<Node> lhsCluster,
                                        List<Node> rhsCluster) {
-    return 0;
+    return 1;
   }
 
-  private static int edgeCutWeight(List<Node> cluster) { return 0; }
+  private static int edgeCutWeight(List<Node> cluster) {
+    HMetisInterface hmetis = new HMetisInterface();
+    List<List<Node>> clusterSplit = hmetis.runMetisOnGraph(cluster, 2);
+
+    Set<Integer> indexesInFirstCluster = new HashSet<>();
+    for (Node node : clusterSplit.get(0)) {
+      indexesInFirstCluster.add(node.originalIndex);
+    }
+
+    int edgeCutSum = 0;
+    for (Node node : clusterSplit.get(1)) {
+      for (Node.Edge edge : node.originalNeighbors) {
+        if (indexesInFirstCluster.contains(edge.neighborIndex)) {
+          edgeCutSum += edge.weight;
+        }
+      }
+    }
+
+    return edgeCutSum;
+  }
 
   private static List<Node> mergeClusters(List<Node> lhsCluster,
                                           List<Node> rhsCluster) {
