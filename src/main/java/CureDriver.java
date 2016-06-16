@@ -2,10 +2,13 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.List;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 import cure.Cure;
+import cure.Cluster;
+import cure.Point;
 
 class CureDriver {
   static final int MIN_REPRESENTIVE_COUNT = 4;
@@ -16,7 +19,7 @@ class CureDriver {
 
   public static void main(String args[]) throws IOException {
     if (args.length != 2) {
-      System.out.println("Dataset filename and partition count required");
+      System.out.println("Dataset filename and cluster count required");
       return;
     }
 
@@ -35,8 +38,16 @@ class CureDriver {
     cureClusterer.setReducingFactorForEachPartition(
         REDUCING_FACTOR_FOR_EACH_PARTITION);
 
-    ArrayList clusters = cureClusterer.cluster();
-
-    // cureClusterer.showClusters(clusters);
+    PrintWriter writer =
+        new PrintWriter(args[0] + ".cure_result", "UTF-8");
+    List<Cluster> clusters = cureClusterer.cluster();
+    for (int i = 0; i < clusters.size(); ++i) {
+      Cluster cluster = clusters.get(i);
+      for (int j = 0; j < cluster.pointsInCluster.size(); j++) {
+        Point p = (Point)cluster.pointsInCluster.get(j);
+        writer.println(p.x + " " + p.y + " " + i + 1);
+      }
+    }
+    writer.close();
   }
 }

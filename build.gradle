@@ -3,7 +3,7 @@ plugins {
   id "com.scuilion.syntastic" version "0.3.6-java7"
 }
 
-mainClassName = "BirchDriver"
+mainClassName = "CureDriver"
 
 run {
   args += 'src/main/resources/MiscT4.8.txt'
