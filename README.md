@@ -16,6 +16,6 @@ Resulting labeled files will be saved in src/main/resources/. These can be viewe
 
 TODO
 ----
-- Output for CURE and ROCK (don't try to run these yet - working on it now).
-- Work out how to specify cluster size for BIRCH.
 - Finish Chameleon extension implementation.
+- Output for ROCK hasn't been implemented.
+- Work out how to specify cluster size for BIRCH.
