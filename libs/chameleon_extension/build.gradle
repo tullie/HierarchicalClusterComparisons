@@ -1,0 +1,14 @@
+plugins {
+  id 'java'
+}
+
+apply plugin: 'com.scuilion.syntastic'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+  compile files('libs/kd.jar')
+  testCompile 'junit:junit:4.12'
+}
