@@ -1,6 +1,7 @@
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -17,8 +18,8 @@ class BirchDriver {
   static final int MEMORY_LIMIT_PERIODIC_CHECK = 10000; // iterations.
 
   public static void main(String args[]) throws IOException {
-    if (args.length != 1) {
-      System.out.println("Dataset filename required");
+    if (args.length != 2) {
+      System.out.println("Dataset filename and cluster count required");
       return;
     }
 
@@ -40,14 +41,24 @@ class BirchDriver {
     }
     birchTree.finishedInsertingData();
 
-    // Print indexes of all values for each subcluster.
-    // TODO: Save these in files.
-    List<ArrayList<Integer>> subclusters = birchTree.getSubclusterMembers();
-    for (List<Integer> subcluster : subclusters) {
-      System.out.println(Arrays.toString(subcluster.toArray(new Integer[0])));
-    }
     System.out.println("Total CF-Nodes: " + birchTree.countNodes());
     System.out.println("Total CF-Entries: " + birchTree.countEntries());
     System.out.println("Total CF-Leaves: " + birchTree.countLeafEntries());
+
+    List<ArrayList<Integer>> subClusters = birchTree.getSubclusterMembers();
+    PrintWriter writer =
+        new PrintWriter(args[0] + ".birch_result", "UTF-8");
+    int clusterNumber = 0;
+    for (List<Integer> cluster : subClusters) {
+      for (int index : cluster) {
+        String entryLine = "";
+        for (double dataPoint : dataset.get(index - 1)) {
+          entryLine += dataPoint + " ";
+        }
+        writer.println(entryLine + clusterNumber);
+      }
+      clusterNumber++;
+    }
+    writer.close();
   }
 }

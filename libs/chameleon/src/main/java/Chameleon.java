@@ -18,7 +18,6 @@ import edu.wlu.cs.levy.CG.KDException;
 
 public class Chameleon {
   static final int K_NEAREST_NEIGHBOURS = 3;
-  static final int MIN_PARTITION_SIZE = 3; // 1 - 5% of dataset size.
   static final double ALPHA = 1;
 
   static HMetisInterface hmetis = new HMetisInterface();
@@ -33,39 +32,11 @@ public class Chameleon {
     List<Node> graph = constructGraph(dataset, K_NEAREST_NEIGHBOURS);
 
     System.out.println("Bisecting....");
-    List<List<Node>> subClusters = bisectUntilSize(graph, MIN_PARTITION_SIZE);
+    int minPartitonSize = Math.max((int)(dataset.size() * 0.025), 1);
+    List<List<Node>> subClusters = bisectUntilSize(graph, minPartitonSize);
 
-    int i = 1;
-    for (List<Node> subCluster : subClusters) {
-      System.out.println();
-      System.out.println("Cluster " + i);
-      i++;
-
-      for (Node node : subCluster) {
-        System.out.print(node.originalIndex + "(");
-        for (Node.Edge edge : node.originalNeighbors) {
-          System.out.print(edge.neighborIndex + ",");
-        }
-        System.out.print("), ");
-      }
-    }
-
-    System.out.println();
-
-    System.out.println("Bisecting....");
+    System.out.println("Merging....");
     List<List<Node>> clusters = mergeSubClusters(subClusters, clusterCount);
-
-    int j = 1;
-    for (List<Node> subCluster : clusters) {
-      System.out.println();
-      System.out.println("Cluster " + j);
-      j++;
-
-      for (Node node : subCluster) {
-        System.out.print(node.originalIndex + ", ");
-      }
-    }
-    System.out.println();
 
     return clusters;
   }
@@ -108,7 +79,6 @@ public class Chameleon {
       for (Node.Edge edge : node.neighbors) {
         Node neighbor = graph.get(edge.neighborIndex);
 
-        // Only add if not already there.
         boolean selfReferenceFound = false;
         for (Node.Edge neighborEdge : neighbor.neighbors) {
           if (neighborEdge.neighborIndex == node.index) {
@@ -152,9 +122,13 @@ public class Chameleon {
         });
 
     List<Node> largestCluster = graph;
-    while (largestCluster.size() > MIN_PARTITION_SIZE) {
+    while (largestCluster.size() > cluster_size) {
+      if (largestCluster.size() <= 1) {
+        break;
+      }
       List<List<Node>> subClusters = hmetis.runMetisOnGraph(largestCluster, 2);
 
+      System.out.println("Heap size: " + clusterSizeHeap.size());
       boolean emptyCluster = false;
       for (List<Node> subCluster : subClusters) {
         if (subCluster.size() == 0) {
@@ -201,7 +175,7 @@ public class Chameleon {
         new PriorityQueue<>(subClusters.size(), new Comparator<double[]>() {
           @Override
           public int compare(double[] lhs, double[] rhs) {
-            return Double.compare(lhs[0], rhs[0]);
+            return Double.compare(rhs[0], lhs[0]);
           }
         });
 
@@ -227,14 +201,13 @@ public class Chameleon {
       }
 
       currentClusterCount--;
-      System.out.println("---------------------------------------------------");
-      System.out.println("-----------" + currentClusterCount + "------------");
-      System.out.println("---------------------------------------------------");
+      System.out.println("Current cluster count: " + currentClusterCount);
       mergedIndexes.add(lhsIndex);
       mergedIndexes.add(rhsIndex);
       List<Node> lhsCluster = subClusters.get(lhsIndex);
       List<Node> rhsCluster = subClusters.get(rhsIndex);
-      List<Node> mergedCluster = mergeClusters(lhsCluster, rhsCluster);
+      lhsCluster.addAll(rhsCluster);
+      List<Node> mergedCluster = rebuildNodeIndexes(lhsCluster);
 
       for (int i = 0; i < subClusters.size(); ++i) {
         if (!mergedIndexes.contains(i)) {
@@ -260,130 +233,104 @@ public class Chameleon {
   }
 
   private static double distance(List<Node> lhsCluster, List<Node> rhsCluster) {
-    double connectivity = relativeInterConnectivity(lhsCluster, rhsCluster);
-    double closeness = relativeCloseness(lhsCluster, rhsCluster);
-    return connectivity * Math.pow(closeness, ALPHA);
+    List<Node.Edge> lhsCrossedEdges = new ArrayList<>();
+    if (lhsCluster.size() > 1) {
+      List<List<Node>> lhsSplit = hmetis.runMetisOnGraph(lhsCluster, 2);
+      lhsCrossedEdges = getCrossClusterEdges(lhsSplit.get(0), lhsSplit.get(0));
+    }
+
+    List<Node.Edge> rhsCrossedEdges = new ArrayList<>();
+    if (rhsCluster.size() > 1) {
+      List<List<Node>> rhsSplit = hmetis.runMetisOnGraph(rhsCluster, 2);
+      rhsCrossedEdges = getCrossClusterEdges(rhsSplit.get(0), rhsSplit.get(0));
+    }
+
+    List<Node.Edge> crossedEdges = getCrossClusterEdges(lhsCluster, rhsCluster);
+    List<Node.Edge> lhsInnerEdges =
+        getCrossClusterEdges(lhsCluster, lhsCluster);
+    List<Node.Edge> rhsInnerEdges =
+        getCrossClusterEdges(rhsCluster, rhsCluster);
+
+    double connectivity = relativeInterConnectivity(
+        lhsCrossedEdges, rhsCrossedEdges, crossedEdges);
+    System.out.println("Connectivity: " + connectivity);
+
+    double closeness =
+        relativeCloseness(lhsCrossedEdges, rhsCrossedEdges, crossedEdges,
+                          lhsInnerEdges, rhsInnerEdges);
+    System.out.println("Closeness: " + closeness);
+
+    return closeness * Math.pow(closeness, ALPHA);
   }
 
-  private static double relativeInterConnectivity(List<Node> lhsCluster,
-                                                  List<Node> rhsCluster) {
-    List<Node> mergedCluster = new ArrayList<>();
-    mergedCluster.addAll(lhsCluster);
-    mergedCluster.addAll(rhsCluster);
-    double mergedEdgeCut = edgeCutWeightSum(mergedCluster);
+  private static double
+  relativeInterConnectivity(List<Node.Edge> lhsCrossedEdges,
+                            List<Node.Edge> rhsCrossedEdges,
+                            List<Node.Edge> allCrossedEdges) {
+    double mergedEdgeCutSum = totalWeightOfEdges(allCrossedEdges);
+    double lhsEdgeCutSum = totalWeightOfEdges(lhsCrossedEdges);
+    double rhsEdgeCutSum = totalWeightOfEdges(rhsCrossedEdges);
 
-    double lhsEdgeCut = 0;
-    if (lhsCluster.size() > 1) {
-      lhsEdgeCut = edgeCutWeightSum(lhsCluster);
-    }
-    double rhsEdgeCut = 0;
-    if (rhsCluster.size() > 1) {
-      rhsEdgeCut = edgeCutWeightSum(rhsCluster);
-    }
-
-    System.out.println("MergedEdgeCut: " + mergedEdgeCut + " lhsEdgeCut: " +
-                       lhsEdgeCut + " rhsEdgeCut: " + rhsEdgeCut);
-
-    if (lhsEdgeCut == 0 && rhsEdgeCut == 0) {
+    if (lhsEdgeCutSum == 0 && rhsEdgeCutSum == 0) {
       return 0;
+    } else {
+      double result = mergedEdgeCutSum / ((lhsEdgeCutSum + rhsEdgeCutSum) / 2);
+      return result;
     }
-
-    return mergedEdgeCut / ((lhsEdgeCut + rhsEdgeCut) / 2);
   }
 
-  private static double relativeCloseness(List<Node> lhsCluster,
-                                          List<Node> rhsCluster) {
-    List<Node> mergedCluster = new ArrayList<>();
-    mergedCluster.addAll(lhsCluster);
-    mergedCluster.addAll(rhsCluster);
-
-    double lhsEdgeCut = 0;
-    double lhsInnerWeight = 0;
-    if (lhsCluster.size() > 1) {
-      lhsEdgeCut = edgeCutWeightAverage(lhsCluster);
-      lhsInnerWeight = averageClusterWeight(lhsCluster);
-    }
-
-    double rhsEdgeCut = 0;
-    double rhsInnerWeight = 0;
-    if (rhsCluster.size() > 1) {
-      rhsEdgeCut = edgeCutWeightAverage(rhsCluster);
-      rhsInnerWeight = averageClusterWeight(rhsCluster);
-    }
-
-    double mergedEdgeCut = edgeCutWeightAverage(mergedCluster);
-
-    double lhsRhsInnerWeight = lhsInnerWeight + rhsInnerWeight;
-    double leftTerm = lhsInnerWeight / lhsRhsInnerWeight * lhsEdgeCut;
-    double rightTerm = rhsInnerWeight / lhsRhsInnerWeight * rhsEdgeCut;
-    return mergedEdgeCut / (leftTerm + rightTerm);
+  private static double relativeCloseness(List<Node.Edge> lhsCrossedEdges,
+                                          List<Node.Edge> rhsCrossedEdges,
+                                          List<Node.Edge> allCrossedEdges,
+                                          List<Node.Edge> lhsInnerEdges,
+                                          List<Node.Edge> rhsInnerEdges) {
+    double lhsEdgeCutAverage = averageWeightOfEdges(lhsCrossedEdges);
+    double lhsWeightAverage = averageWeightOfEdges(lhsInnerEdges);
+    double rhsEdgeCutAverage = averageWeightOfEdges(rhsCrossedEdges);
+    double rhsWeightAverage = averageWeightOfEdges(rhsInnerEdges);
+    double crossEdgeCut = averageWeightOfEdges(allCrossedEdges);
+    double lhsRhsWeight = lhsWeightAverage + rhsWeightAverage;
+    if (lhsRhsWeight == 0)
+      return 0;
+    double leftTerm = lhsWeightAverage / lhsRhsWeight * lhsEdgeCutAverage;
+    double rightTerm = rhsWeightAverage / lhsRhsWeight * rhsEdgeCutAverage;
+    if (leftTerm + rightTerm == 0)
+      return 0;
+    double result = crossEdgeCut / (leftTerm + rightTerm);
+    return result;
   }
 
-  private static double averageClusterWeight(List<Node> cluster) {
+  private static List<Node.Edge> getCrossClusterEdges(List<Node> lhsCluster,
+                                                      List<Node> rhsCluster) {
     Set<Integer> indexesInCluster = new HashSet<>();
-    for (Node node : cluster) {
+    for (Node node : lhsCluster) {
       indexesInCluster.add(node.originalIndex);
     }
 
-    double edgeWeightSum = 0;
-    int innerEdgeCount = 0;
-    for (Node node : cluster) {
+    List<Node.Edge> crossedEdges = new ArrayList<>();
+    for (Node node : rhsCluster) {
       for (Node.Edge edge : node.originalNeighbors) {
         if (indexesInCluster.contains(edge.neighborIndex)) {
-          edgeWeightSum += edge.weight;
-          innerEdgeCount++;
+          crossedEdges.add(edge);
         }
       }
     }
 
-    return edgeWeightSum / (double)innerEdgeCount;
+    return crossedEdges;
   }
 
-  private static double edgeCutWeightAverage(List<Node> cluster) {
-    List<List<Node>> clusterSplit = hmetis.runMetisOnGraph(cluster, 2);
-
-    Set<Integer> indexesInFirstCluster = new HashSet<>();
-    for (Node node : clusterSplit.get(0)) {
-      indexesInFirstCluster.add(node.originalIndex);
+  private static double averageWeightOfEdges(List<Node.Edge> edges) {
+    if (edges.size() == 0) {
+      return 0;
     }
-
-    double edgeCutSum = 0;
-    int edgeCutCount = 0;
-    for (Node node : clusterSplit.get(1)) {
-      for (Node.Edge edge : node.originalNeighbors) {
-        if (indexesInFirstCluster.contains(edge.neighborIndex)) {
-          edgeCutSum += edge.weight;
-          edgeCutCount++;
-        }
-      }
-    }
-
-    return edgeCutSum / (double)edgeCutCount;
+    return totalWeightOfEdges(edges) / edges.size();
   }
 
-  private static double edgeCutWeightSum(List<Node> cluster) {
-    List<List<Node>> clusterSplit = hmetis.runMetisOnGraph(cluster, 2);
-
-    Set<Integer> indexesInFirstCluster = new HashSet<>();
-    for (Node node : clusterSplit.get(0)) {
-      indexesInFirstCluster.add(node.originalIndex);
+  private static double totalWeightOfEdges(List<Node.Edge> edges) {
+    double edgeWeightSum = 0;
+    for (Node.Edge edge : edges) {
+      edgeWeightSum += edge.weight;
     }
-
-    double edgeCutSum = 0;
-    for (Node node : clusterSplit.get(1)) {
-      for (Node.Edge edge : node.originalNeighbors) {
-        if (indexesInFirstCluster.contains(edge.neighborIndex)) {
-          edgeCutSum += edge.weight;
-        }
-      }
-    }
-
-    return edgeCutSum;
-  }
-
-  private static List<Node> mergeClusters(List<Node> lhsCluster,
-                                          List<Node> rhsCluster) {
-    lhsCluster.addAll(rhsCluster);
-    return rebuildNodeIndexes(lhsCluster);
+    return edgeWeightSum;
   }
 }

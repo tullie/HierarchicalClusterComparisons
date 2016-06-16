@@ -12,7 +12,7 @@ import chameleon.Node;
 class ChameleonDriver {
   public static void main(String args[]) throws IOException {
     if (args.length != 2) {
-      System.out.println("Dataset filename and partition count required");
+      System.out.println("Dataset filename and cluster count required");
       return;
     }
 

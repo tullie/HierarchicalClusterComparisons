@@ -3,11 +3,11 @@ plugins {
   id "com.scuilion.syntastic" version "0.3.6-java7"
 }
 
-mainClassName = "ChameleonDriver"
+mainClassName = "BirchDriver"
 
 run {
-  args += 'src/main/resources/tullie_test_points.txt'
-  args += '3'
+  args += 'src/main/resources/MiscT4.8.txt'
+  args += '6'
 }
 
 repositories {
@@ -19,6 +19,7 @@ dependencies {
   compile project('libs:cure')
   compile project('libs:rock')
   compile project('libs:chameleon')
+  compile project('libs:chameleon_extension')
   testCompile 'junit:junit:4.12'
 }
 

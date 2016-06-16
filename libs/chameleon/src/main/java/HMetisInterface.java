@@ -17,7 +17,7 @@ import java.lang.ProcessBuilder;
 import java.util.Enumeration;
 
 public class HMetisInterface {
-  static final double UFACTOR = 25.0; // Balance factor (%).
+  static final double UFACTOR = 5.0; // Balance factor (%).
 
   static int current = 0;
 
@@ -47,8 +47,8 @@ public class HMetisInterface {
 
     try {
       Process p = Runtime.getRuntime().exec(sb.toString());
-      System.out.println(readStdout(p));
-      System.out.println(readStderr(p));
+      // System.out.println(readStdout(p));
+      // System.out.println(readStderr(p));
       readStdout(p);
       p.waitFor();
     } catch (IOException | InterruptedException e) {
