@@ -6,7 +6,7 @@ plugins {
 mainClassName = "ChameleonDriver"
 
 run {
-  args += 'src/main/resources/spiral.txt'
+  args += 'src/main/resources/tullie_test_points.txt'
   args += '3'
 }
 

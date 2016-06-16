@@ -18,8 +18,10 @@ import edu.wlu.cs.levy.CG.KDException;
 
 public class Chameleon {
   static final int K_NEAREST_NEIGHBOURS = 3;
-  static final int MIN_PARTITION_SIZE = 10; // 1 - 5% of dataset size.
+  static final int MIN_PARTITION_SIZE = 3; // 1 - 5% of dataset size.
   static final double ALPHA = 1;
+
+  static HMetisInterface hmetis = new HMetisInterface();
 
   public static List<List<Node>> cluster(List<double[]> dataset,
                                          int clusterCount) {
@@ -29,6 +31,8 @@ public class Chameleon {
     }
 
     List<Node> graph = constructGraph(dataset, K_NEAREST_NEIGHBOURS);
+
+    System.out.println("Bisecting....");
     List<List<Node>> subClusters = bisectUntilSize(graph, MIN_PARTITION_SIZE);
 
     int i = 1;
@@ -47,8 +51,8 @@ public class Chameleon {
     }
 
     System.out.println();
-    System.out.println("========================================");
 
+    System.out.println("Bisecting....");
     List<List<Node>> clusters = mergeSubClusters(subClusters, clusterCount);
 
     int j = 1;
@@ -149,15 +153,25 @@ public class Chameleon {
 
     List<Node> largestCluster = graph;
     while (largestCluster.size() > MIN_PARTITION_SIZE) {
-      HMetisInterface hmetis = new HMetisInterface();
       List<List<Node>> subClusters = hmetis.runMetisOnGraph(largestCluster, 2);
 
+      boolean emptyCluster = false;
       for (List<Node> subCluster : subClusters) {
+        if (subCluster.size() == 0) {
+          emptyCluster = true;
+          continue;
+        }
         subCluster = rebuildNodeIndexes(subCluster);
         clusterSizeHeap.add(subCluster);
       }
+
+      if (emptyCluster) {
+        break;
+      }
+
       largestCluster = clusterSizeHeap.poll();
     }
+    clusterSizeHeap.add(largestCluster);
     return new ArrayList<>(clusterSizeHeap);
   }
 
@@ -251,30 +265,81 @@ public class Chameleon {
     return connectivity * Math.pow(closeness, ALPHA);
   }
 
-  private static int relativeInterConnectivity(List<Node> lhsCluster,
-                                               List<Node> rhsCluster) {
+  private static double relativeInterConnectivity(List<Node> lhsCluster,
+                                                  List<Node> rhsCluster) {
     List<Node> mergedCluster = new ArrayList<>();
     mergedCluster.addAll(lhsCluster);
     mergedCluster.addAll(rhsCluster);
-    int mergedEdgeCut = edgeCutWeight(mergedCluster);
-    int lhsEdgeCut = edgeCutWeight(lhsCluster);
-    int rhsEdgeCut = edgeCutWeight(rhsCluster);
+    double mergedEdgeCut = edgeCutWeightSum(mergedCluster);
+
+    double lhsEdgeCut = 0;
+    if (lhsCluster.size() > 1) {
+      lhsEdgeCut = edgeCutWeightSum(lhsCluster);
+    }
+    double rhsEdgeCut = 0;
+    if (rhsCluster.size() > 1) {
+      rhsEdgeCut = edgeCutWeightSum(rhsCluster);
+    }
+
     System.out.println("MergedEdgeCut: " + mergedEdgeCut + " lhsEdgeCut: " +
                        lhsEdgeCut + " rhsEdgeCut: " + rhsEdgeCut);
-    if (lhsEdgeCut == 0 || rhsEdgeCut == 0) {
+
+    if (lhsEdgeCut == 0 && rhsEdgeCut == 0) {
       return 0;
     }
 
     return mergedEdgeCut / ((lhsEdgeCut + rhsEdgeCut) / 2);
   }
 
-  private static int relativeCloseness(List<Node> lhsCluster,
-                                       List<Node> rhsCluster) {
-    return 1;
+  private static double relativeCloseness(List<Node> lhsCluster,
+                                          List<Node> rhsCluster) {
+    List<Node> mergedCluster = new ArrayList<>();
+    mergedCluster.addAll(lhsCluster);
+    mergedCluster.addAll(rhsCluster);
+
+    double lhsEdgeCut = 0;
+    double lhsInnerWeight = 0;
+    if (lhsCluster.size() > 1) {
+      lhsEdgeCut = edgeCutWeightAverage(lhsCluster);
+      lhsInnerWeight = averageClusterWeight(lhsCluster);
+    }
+
+    double rhsEdgeCut = 0;
+    double rhsInnerWeight = 0;
+    if (rhsCluster.size() > 1) {
+      rhsEdgeCut = edgeCutWeightAverage(rhsCluster);
+      rhsInnerWeight = averageClusterWeight(rhsCluster);
+    }
+
+    double mergedEdgeCut = edgeCutWeightAverage(mergedCluster);
+
+    double lhsRhsInnerWeight = lhsInnerWeight + rhsInnerWeight;
+    double leftTerm = lhsInnerWeight / lhsRhsInnerWeight * lhsEdgeCut;
+    double rightTerm = rhsInnerWeight / lhsRhsInnerWeight * rhsEdgeCut;
+    return mergedEdgeCut / (leftTerm + rightTerm);
   }
 
-  private static int edgeCutWeight(List<Node> cluster) {
-    HMetisInterface hmetis = new HMetisInterface();
+  private static double averageClusterWeight(List<Node> cluster) {
+    Set<Integer> indexesInCluster = new HashSet<>();
+    for (Node node : cluster) {
+      indexesInCluster.add(node.originalIndex);
+    }
+
+    double edgeWeightSum = 0;
+    int innerEdgeCount = 0;
+    for (Node node : cluster) {
+      for (Node.Edge edge : node.originalNeighbors) {
+        if (indexesInCluster.contains(edge.neighborIndex)) {
+          edgeWeightSum += edge.weight;
+          innerEdgeCount++;
+        }
+      }
+    }
+
+    return edgeWeightSum / (double)innerEdgeCount;
+  }
+
+  private static double edgeCutWeightAverage(List<Node> cluster) {
     List<List<Node>> clusterSplit = hmetis.runMetisOnGraph(cluster, 2);
 
     Set<Integer> indexesInFirstCluster = new HashSet<>();
@@ -282,7 +347,29 @@ public class Chameleon {
       indexesInFirstCluster.add(node.originalIndex);
     }
 
-    int edgeCutSum = 0;
+    double edgeCutSum = 0;
+    int edgeCutCount = 0;
+    for (Node node : clusterSplit.get(1)) {
+      for (Node.Edge edge : node.originalNeighbors) {
+        if (indexesInFirstCluster.contains(edge.neighborIndex)) {
+          edgeCutSum += edge.weight;
+          edgeCutCount++;
+        }
+      }
+    }
+
+    return edgeCutSum / (double)edgeCutCount;
+  }
+
+  private static double edgeCutWeightSum(List<Node> cluster) {
+    List<List<Node>> clusterSplit = hmetis.runMetisOnGraph(cluster, 2);
+
+    Set<Integer> indexesInFirstCluster = new HashSet<>();
+    for (Node node : clusterSplit.get(0)) {
+      indexesInFirstCluster.add(node.originalIndex);
+    }
+
+    double edgeCutSum = 0;
     for (Node node : clusterSplit.get(1)) {
       for (Node.Edge edge : node.originalNeighbors) {
         if (indexesInFirstCluster.contains(edge.neighborIndex)) {
@@ -298,15 +385,5 @@ public class Chameleon {
                                           List<Node> rhsCluster) {
     lhsCluster.addAll(rhsCluster);
     return rebuildNodeIndexes(lhsCluster);
-  }
-
-  private static <E, K> void addToListMap(Map<E, List<K>> map, E key, K value) {
-    if (!map.containsKey(key)) {
-      map.put(key, new ArrayList<>());
-    }
-
-    List<K> valueList = map.get(key);
-    valueList.add(value);
-    map.put(key, valueList);
   }
 }

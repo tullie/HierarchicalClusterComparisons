@@ -30,14 +30,11 @@ public class HMetisInterface {
     String filename = inputFile.getName();
     hMetisExport(graph, inputFile);
 
-    File metisFile = getBinary();
     if (metisFile == null) {
-      System.out.println("Could not find hmetis binary");
-      return null;
+      metisFile = getBinary();
     }
 
     // Run hMetis.
-    System.out.println("metis path: " + metisFile.getAbsolutePath());
     String space = " ";
     StringBuilder sb = new StringBuilder(metisFile.getAbsolutePath());
     sb.append(space)
@@ -48,12 +45,10 @@ public class HMetisInterface {
         .append(String.valueOf(UFACTOR))
         .append(space);
 
-    System.out.println(sb.toString());
-
     try {
       Process p = Runtime.getRuntime().exec(sb.toString());
-      // System.out.println(readStdout(p));
-      // System.out.println(readStderr(p));
+      System.out.println(readStdout(p));
+      System.out.println(readStderr(p));
       readStdout(p);
       p.waitFor();
     } catch (IOException | InterruptedException e) {
@@ -109,12 +104,11 @@ public class HMetisInterface {
             new URL(url.getProtocol(), url.getHost(), url.getPort(),
                     url.getFile() + "shmetis", null);
         File f = new File(urlWithHmetisPath.toURI());
-        System.out.println(urlWithHmetisPath.toString());
         if (f.exists()) {
           Process p =
               Runtime.getRuntime().exec("chmod ugo+x " + f.getAbsolutePath());
-          System.out.println(readStdout(p));
-          System.out.println(readStderr(p));
+          readStdout(p);
+          readStderr(p);
           return f;
         }
       }
