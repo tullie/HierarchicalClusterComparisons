@@ -18,10 +18,13 @@ import edu.wlu.cs.levy.CG.KDTree;
 import edu.wlu.cs.levy.CG.KDException;
 
 public class Chameleon {
-  static final int K_NEAREST_NEIGHBOURS = 3;
-  static final double ALPHA = 1;
+  static final int K_NEAREST_NEIGHBOURS = 7;
+  static final double ALPHA = 2;
+  static final int MIN_REPRESENTATION_COUNT = 200;
+  static final int MIN_PARTITION_COUNT = 0;
+
+  static final boolean RANDOM_SAMPLE = true;
   static final double REQUIRED_REPRESENTATION_PROBABLITY = 0.1;
-  static final int MIN_REPRESENTATION_COUNT = 4;
 
   HMetisInterface hmetis = new HMetisInterface();
   Set<Integer> sampledIndexes = new HashSet<>();
@@ -32,20 +35,40 @@ public class Chameleon {
       return null;
     }
 
-    int samplePoints = calculateSampleSize(clusterCount, dataset.size());
-    System.out.println("Found sample size: " + samplePoints);
-    List<double[]> sampledDataset = selectRandomPoints(samplePoints, dataset);
-
-    List<Node> graph = constructGraph(dataset, K_NEAREST_NEIGHBOURS);
+    List<Node> graph;
+    if (RANDOM_SAMPLE) {
+      int samplePoints = calculateSampleSize(clusterCount, dataset.size());
+      System.out.println("Found sample size: " + samplePoints);
+      List<double[]> sampleDataset = selectRandomPoints(samplePoints, dataset);
+      graph = constructGraph(sampleDataset, K_NEAREST_NEIGHBOURS);
+    } else {
+      graph = constructGraph(dataset, K_NEAREST_NEIGHBOURS);
+    }
 
     System.out.println("Bisecting....");
-    int minPartitonSize = Math.max((int)(dataset.size() * 0.025), 1);
-    List<List<Node>> subClusters = bisectUntilSize(graph, minPartitonSize);
+    int minPartitionSize = MIN_PARTITION_COUNT;
+    if (minPartitionSize == 0) {
+      minPartitionSize = Math.max((int)(dataset.size() * 0.025), 1);
+    }
+    List<List<Node>> bisectedGraph = bisectUntilSize(graph, minPartitionSize);
 
     System.out.println("Merging....");
-    List<List<Node>> clusters = mergeSubClusters(subClusters, clusterCount);
+    List<Cluster> subClusters = new ArrayList<>(bisectedGraph.size());
+    for (List<Node> subCluster : bisectedGraph) {
+      subClusters.add(new Cluster(subCluster));
+    }
+    List<Cluster> clusters = mergeSubClusters(subClusters, clusterCount);
 
-    return labelRemainingDataPoints(clusters, dataset);
+    List<List<Node>> clusterNodes = new ArrayList<>(clusters.size());
+    for (Cluster cluster : clusters) {
+      clusterNodes.add(cluster.nodes);
+    }
+
+    if (RANDOM_SAMPLE) {
+      return labelRemainingDataPoints(clusterNodes, dataset);
+    } else {
+      return clusterNodes;
+    }
   }
 
   private int calculateSampleSize(int clusterCount, int datasetSize) {
@@ -79,12 +102,12 @@ public class Chameleon {
     return datasetSample;
   }
 
-  private List<List<Node>> labelRemainingDataPoints(List<List<Node>> clusters,
+  private List<List<Node>> labelRemainingDataPoints(List<List<Node>> clusterNodes,
                                                     List<double[]> dataset) {
     Map<Integer, Integer> clusterFromNodeIndex = new HashMap<>();
-    KDTree kdTree = new KDTree(clusters.get(0).get(0).values.length);
-    for (int i = 0; i < clusters.size(); ++i) {
-      for (Node node : clusters.get(i)) {
+    KDTree kdTree = new KDTree(clusterNodes.get(0).get(0).values.length);
+    for (int i = 0; i < clusterNodes.size(); ++i) {
+      for (Node node : clusterNodes.get(i)) {
         clusterFromNodeIndex.put(node.originalIndex, i);
         try {
           kdTree.insert(node.values, node.originalIndex);
@@ -105,16 +128,16 @@ public class Chameleon {
       try {
         Integer nearestIndex = (Integer)kdTree.nearest(dataset.get(i));
         int clusterToAssign = clusterFromNodeIndex.get(nearestIndex);
-        int newIndex = clusters.get(clusterToAssign).size();
+        int newIndex = clusterNodes.get(clusterToAssign).size();
         Node assignedNode = new Node(newIndex, dataset.get(i), null);
-        clusters.get(clusterToAssign).add(assignedNode);
-      } catch (Exception e) {
-        String msg = "Exception when finding knn: " + e.getMessage();
+        clusterNodes.get(clusterToAssign).add(assignedNode);
+      } catch (KDException e) {
+        String msg = "Exception when finding nearest: " + e.getMessage();
         System.out.println(msg);
       }
     }
 
-    return clusters;
+    return clusterNodes;
   }
 
   private List<Node> constructGraph(List<double[]> dataset, int knn) {
@@ -246,8 +269,8 @@ public class Chameleon {
     return cluster;
   }
 
-  private List<List<Node>> mergeSubClusters(List<List<Node>> subClusters,
-                                            int clusterCount) {
+  private List<Cluster> mergeSubClusters(List<Cluster> subClusters,
+                                         int clusterCount) {
     PriorityQueue<double[]> clusterDistQueue =
         new PriorityQueue<>(subClusters.size(), new Comparator<double[]>() {
           @Override
@@ -259,7 +282,8 @@ public class Chameleon {
     for (int i = 0; i < subClusters.size(); ++i) {
       for (int j = i + 1; j < subClusters.size(); ++j) {
         double[] distAndIndexes = new double[3];
-        distAndIndexes[0] = distance(subClusters.get(i), subClusters.get(j));
+        distAndIndexes[0] = distance(subClusters.get(i).reprPoints,
+                                     subClusters.get(j).reprPoints);
         distAndIndexes[1] = (double)i;
         distAndIndexes[2] = (double)j;
         clusterDistQueue.add(distAndIndexes);
@@ -281,14 +305,15 @@ public class Chameleon {
       System.out.println("Current cluster count: " + currentClusterCount);
       mergedIndexes.add(lhsIndex);
       mergedIndexes.add(rhsIndex);
-      List<Node> lhsCluster = subClusters.get(lhsIndex);
-      List<Node> rhsCluster = subClusters.get(rhsIndex);
-      List<Node> mergedCluster = mergeClusters(lhsCluster, rhsCluster);
+      Cluster lhsCluster = subClusters.get(lhsIndex);
+      Cluster rhsCluster = subClusters.get(rhsIndex);
+      Cluster mergedCluster = mergeClusters(lhsCluster, rhsCluster);
 
       for (int i = 0; i < subClusters.size(); ++i) {
         if (!mergedIndexes.contains(i)) {
           double[] mergedDistAndIndexes = new double[3];
-          mergedDistAndIndexes[0] = distance(mergedCluster, subClusters.get(i));
+          mergedDistAndIndexes[0] =
+              distance(mergedCluster.reprPoints, subClusters.get(i).reprPoints);
           mergedDistAndIndexes[1] = (double)i;
           mergedDistAndIndexes[2] = (double)subClusters.size();
           clusterDistQueue.add(mergedDistAndIndexes);
@@ -298,7 +323,7 @@ public class Chameleon {
       subClusters.add(mergedCluster);
     }
 
-    List<List<Node>> resultClusters = new ArrayList<>();
+    List<Cluster> resultClusters = new ArrayList<>();
     for (int i = 0; i < subClusters.size(); ++i) {
       if (!mergedIndexes.contains(i)) {
         resultClusters.add(subClusters.get(i));
@@ -308,18 +333,22 @@ public class Chameleon {
     return resultClusters;
   }
 
-  private List<List<Node>> mergeClusters(List<Node> lhsCluster,
-      List<Node> rhsCluster) {
-    List<Node> mergedCluster = lhsCluster;
-    mergedCluster.addAll(rhsCluster);
-    int mean = calculateClusterMean(megedCluster);
+  private Cluster mergeClusters(Cluster lhsCluster, Cluster rhsCluster) {
+    Cluster mergedCluster = lhsCluster;
+    mergedCluster.reprPoints.addAll(rhsCluster.reprPoints);
+    mergedCluster.nodes.addAll(rhsCluster.nodes);
+    rebuildNodeIndexes(mergedCluster.reprPoints);
+    rebuildNodeIndexes(mergedCluster.nodes);
+    /*
+    double[] mean = calculateClusterMean(mergedCluster.reprPoints);
     List<Node> reprNodes = new ArrayList();
-    for (int i = 0; i < MIN_REPRESENTATION_COUNT; ++i) {
+    for (int i = 0; i < MIN_REPRESENTATION_COUNT && i <
+    mergedCluster.reprPoints.size(); ++i) {
       double maxDist = 0;
       double minDist = 0;
       Node maxNode = null;
-      for (int j = 0; j < mergedCluster.size(); ++j) {
-        Node node = mergedClusters.get(j);
+      for (int j = 0; j < mergedCluster.reprPoints.size(); ++j) {
+        Node node = mergedCluster.reprPoints.get(j);
         if (j == 0) {
           minDist = euclideanDistance(node.values, mean);
         } else {
@@ -333,33 +362,35 @@ public class Chameleon {
       reprNodes.add(maxNode);
     }
 
-    return reprNodes;
+    mergedCluster.reprPoints = reprNodes;
+    */
+    return mergedCluster;
   }
 
-  private double computeMinDistanceFromGroup(Node node, List<Node> set) {
+  private double calculateMinDistanceFromSet(Node node, List<Node> set) {
     double minDistance = Double.MIN_VALUE;
     for (Node setNode : set) {
-      if (setNode.originalIndex == set.originalIndex) {
+      if (setNode.originalIndex == node.originalIndex) {
         continue;
       }
 
-      double distance = euclideanDistance(node, setNode);
+      double distance = euclideanDistance(node.values, setNode.values);
       if (minDistance > distance) {
         minDistance = distance;
       }
     }
 
-    if (minDistance == 100000) {
+    if (minDistance == Double.MIN_VALUE) {
       return 0;
     } else
       return minDistance;
   }
 
   private double[] calculateClusterMean(List<Node> cluster) {
-    int dimension = cluster.get(0).values.size();
+    int dimension = cluster.get(0).values.length;
     double[] mean = new double[dimension];
     for (Node node : cluster) {
-      for (int i = 0; i < mean.size(); ++i) {
+      for (int i = 0; i < mean.length; ++i) {
         mean[i] += node.values[i];
       }
     }
@@ -375,13 +406,13 @@ public class Chameleon {
     List<Node.Edge> lhsCrossedEdges = new ArrayList<>();
     if (lhsCluster.size() > 1) {
       List<List<Node>> lhsSplit = hmetis.runMetisOnGraph(lhsCluster, 2);
-      lhsCrossedEdges = getCrossClusterEdges(lhsSplit.get(0), lhsSplit.get(0));
+      lhsCrossedEdges = getCrossClusterEdges(lhsSplit.get(0), lhsSplit.get(1));
     }
 
     List<Node.Edge> rhsCrossedEdges = new ArrayList<>();
     if (rhsCluster.size() > 1) {
       List<List<Node>> rhsSplit = hmetis.runMetisOnGraph(rhsCluster, 2);
-      rhsCrossedEdges = getCrossClusterEdges(rhsSplit.get(0), rhsSplit.get(0));
+      rhsCrossedEdges = getCrossClusterEdges(rhsSplit.get(0), rhsSplit.get(1));
     }
 
     List<Node.Edge> crossedEdges = getCrossClusterEdges(lhsCluster, rhsCluster);
@@ -409,7 +440,7 @@ public class Chameleon {
     double lhsEdgeCutSum = totalWeightOfEdges(lhsCrossedEdges);
     double rhsEdgeCutSum = totalWeightOfEdges(rhsCrossedEdges);
 
-    if (lhsEdgeCutSum == 0 && rhsEdgeCutSum == 0) {
+    if (lhsEdgeCutSum + rhsEdgeCutSum == 0) {
       return 0;
     } else {
       double result = mergedEdgeCutSum / ((lhsEdgeCutSum + rhsEdgeCutSum) / 2);

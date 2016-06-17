@@ -3,11 +3,11 @@ plugins {
   id "com.scuilion.syntastic" version "0.3.6-java7"
 }
 
-mainClassName = "ChameleonExtensionDriver"
+mainClassName = "ChameleonDriver"
 
 run {
-  args += 'src/main/resources/MiscT4.8.txt'
-  args += '6'
+  args += 'src/main/resources/r14.txt'
+  args += '15'
 }
 
 repositories {

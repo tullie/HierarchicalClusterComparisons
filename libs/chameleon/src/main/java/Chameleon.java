@@ -17,8 +17,8 @@ import edu.wlu.cs.levy.CG.KDTree;
 import edu.wlu.cs.levy.CG.KDException;
 
 public class Chameleon {
-  static final int K_NEAREST_NEIGHBOURS = 3;
-  static final double ALPHA = 1;
+  static final int K_NEAREST_NEIGHBOURS = 10;
+  static final double ALPHA = 2;
 
   static HMetisInterface hmetis = new HMetisInterface();
 
@@ -236,13 +236,13 @@ public class Chameleon {
     List<Node.Edge> lhsCrossedEdges = new ArrayList<>();
     if (lhsCluster.size() > 1) {
       List<List<Node>> lhsSplit = hmetis.runMetisOnGraph(lhsCluster, 2);
-      lhsCrossedEdges = getCrossClusterEdges(lhsSplit.get(0), lhsSplit.get(0));
+      lhsCrossedEdges = getCrossClusterEdges(lhsSplit.get(0), lhsSplit.get(1));
     }
 
     List<Node.Edge> rhsCrossedEdges = new ArrayList<>();
     if (rhsCluster.size() > 1) {
       List<List<Node>> rhsSplit = hmetis.runMetisOnGraph(rhsCluster, 2);
-      rhsCrossedEdges = getCrossClusterEdges(rhsSplit.get(0), rhsSplit.get(0));
+      rhsCrossedEdges = getCrossClusterEdges(rhsSplit.get(0), rhsSplit.get(1));
     }
 
     List<Node.Edge> crossedEdges = getCrossClusterEdges(lhsCluster, rhsCluster);
@@ -271,7 +271,7 @@ public class Chameleon {
     double lhsEdgeCutSum = totalWeightOfEdges(lhsCrossedEdges);
     double rhsEdgeCutSum = totalWeightOfEdges(rhsCrossedEdges);
 
-    if (lhsEdgeCutSum == 0 && rhsEdgeCutSum == 0) {
+    if (lhsEdgeCutSum + rhsEdgeCutSum == 0) {
       return 0;
     } else {
       double result = mergedEdgeCutSum / ((lhsEdgeCutSum + rhsEdgeCutSum) / 2);
@@ -290,12 +290,14 @@ public class Chameleon {
     double rhsWeightAverage = averageWeightOfEdges(rhsInnerEdges);
     double crossEdgeCut = averageWeightOfEdges(allCrossedEdges);
     double lhsRhsWeight = lhsWeightAverage + rhsWeightAverage;
-    if (lhsRhsWeight == 0)
+    if (lhsRhsWeight == 0) {
       return 0;
+    }
     double leftTerm = lhsWeightAverage / lhsRhsWeight * lhsEdgeCutAverage;
     double rightTerm = rhsWeightAverage / lhsRhsWeight * rhsEdgeCutAverage;
-    if (leftTerm + rightTerm == 0)
+    if (leftTerm + rightTerm == 0) {
       return 0;
+    }
     double result = crossEdgeCut / (leftTerm + rightTerm);
     return result;
   }

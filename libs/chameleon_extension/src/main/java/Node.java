@@ -23,9 +23,11 @@ public class Node {
   public Node(int index, double[] values, List<Edge> neighbors) {
     this.index = index;
     this.values = values;
-    this.neighbors = neighbors;
     this.originalIndex = index;
-    this.originalNeighbors = new ArrayList<>(neighbors);
+    if (neighbors != null) {
+      this.neighbors = neighbors;
+      this.originalNeighbors = new ArrayList<>(neighbors);
+    }
   }
 
   public Node(Node cpyNode) {
